@@ -2,7 +2,7 @@
 
 namespace Jenssegers\Mongodb\Queue;
 
-use Carbon\Carbon;
+use Illuminate\Support\Carbon;
 use Illuminate\Queue\DatabaseQueue;
 use Jenssegers\Mongodb\Connection;
 use MongoDB\Operation\FindOneAndUpdate;
@@ -44,9 +44,7 @@ class MongoQueue extends DatabaseQueue
         }
 
         if ($job = $this->getNextAvailableJobAndReserve($queue)) {
-            return new MongoJob(
-                $this->container, $this, $job, $this->connectionName, $queue
-            );
+            return $this->marshalJob($queue, $job);
         }
     }
 
@@ -117,8 +115,7 @@ class MongoQueue extends DatabaseQueue
             })->get();
 
         foreach ($reserved as $job) {
-            $attempts = $job['attempts'] + 1;
-            $this->releaseJob($job['_id'], $attempts);
+            $this->releaseJob($job['_id']);
         }
     }
 
@@ -126,16 +123,29 @@ class MongoQueue extends DatabaseQueue
      * Release the given job ID from reservation.
      *
      * @param  string $id
-     * @param  int $attempts
      * @return void
      */
-    protected function releaseJob($id, $attempts)
+    protected function releaseJob($id)
     {
         $this->database->table($this->table)->where('_id', $id)->update([
             'reserved' => 0,
             'reserved_at' => null,
-            'attempts' => $attempts,
         ]);
+    }
+
+    protected function marshalJob($queue, $job)
+    {
+        $job->attempts += 1;
+        $this->database->table($this->table)->where('_id', $job->id)->update([
+            'attempts' => $job->attempts
+        ]);
+        return new MongoJob(
+            $this->container,
+            $this,
+            $job,
+            $this->connectionName,
+            $queue
+        );
     }
 
     /**
